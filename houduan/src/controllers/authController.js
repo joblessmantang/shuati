@@ -1,0 +1,319 @@
+const { pool } = require('../config/database');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+
+class AuthController {
+    async register(req, res, next) {
+        try {
+            const { username, password, role } = req.body;
+
+            if (!username || !password) {
+                return res.status(400).json({
+                    success: false,
+                    message: '用户名和密码不能为空'
+                });
+            }
+
+            if (username.length < 3 || username.length > 50) {
+                return res.status(400).json({
+                    success: false,
+                    message: '用户名长度应为3-50个字符'
+                });
+            }
+
+            if (password.length < 6) {
+                return res.status(400).json({
+                    success: false,
+                    message: '密码长度至少6个字符'
+                });
+            }
+
+            const hashedPassword = await bcrypt.hash(password, 10);
+
+            // 只有管理员才能注册其他管理员，普通用户只能注册为 user
+            const userRole = role === 'admin' && req.user && req.user.role === 'admin' ? 'admin' : 'user';
+
+            const [result] = await pool.execute(
+                'INSERT INTO users (username, password, role) VALUES (?, ?, ?)',
+                [username, hashedPassword, userRole]
+            );
+
+            const token = jwt.sign(
+                { id: result.insertId, username, role: userRole },
+                process.env.JWT_SECRET,
+                { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+            );
+
+            res.status(201).json({
+                success: true,
+                token,
+                user: {
+                    id: result.insertId,
+                    username,
+                    role: userRole
+                }
+            });
+        } catch (error) {
+            if (error.code === 'ER_DUP_ENTRY') {
+                return res.status(400).json({
+                    success: false,
+                    message: '用户名已存在'
+                });
+            }
+            next(error);
+        }
+    }
+
+    async login(req, res, next) {
+        try {
+            const { username, password } = req.body;
+
+            if (!username || !password) {
+                return res.status(400).json({
+                    success: false,
+                    message: '用户名和密码不能为空'
+                });
+            }
+
+            const [users] = await pool.execute(
+                'SELECT * FROM users WHERE username = ?',
+                [username]
+            );
+
+            if (users.length === 0) {
+                return res.status(401).json({
+                    success: false,
+                    message: '用户名或密码错误'
+                });
+            }
+
+            const user = users[0];
+            const isValidPassword = await bcrypt.compare(password, user.password);
+
+            if (!isValidPassword) {
+                return res.status(401).json({
+                    success: false,
+                    message: '用户名或密码错误'
+                });
+            }
+
+            const token = jwt.sign(
+                { id: user.id, username: user.username },
+                process.env.JWT_SECRET,
+                { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+            );
+
+            res.json({
+                token,
+                user: {
+                    id: user.id,
+                    username: user.username,
+                    role: user.role
+                }
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async getCurrentUser(req, res) {
+        try {
+            const [users] = await pool.execute(
+                'SELECT id, username, role FROM users WHERE id = ?',
+                [req.user.id]
+            );
+
+            if (users.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: '用户不存在'
+                });
+            }
+
+            res.json({
+                success: true,
+                data: users[0]
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async registerAdmin(req, res, next) {
+        try {
+            const { username, password } = req.body;
+
+            if (!username || !password) {
+                return res.status(400).json({
+                    success: false,
+                    message: '用户名和密码不能为空'
+                });
+            }
+
+            if (username.length < 3 || username.length > 50) {
+                return res.status(400).json({
+                    success: false,
+                    message: '用户名长度应为3-50个字符'
+                });
+            }
+
+            if (password.length < 6) {
+                return res.status(400).json({
+                    success: false,
+                    message: '密码长度至少6个字符'
+                });
+            }
+
+            // 检查当前用户是否是管理员
+            const [admins] = await pool.execute(
+                'SELECT role FROM users WHERE id = ?',
+                [req.user.id]
+            );
+
+            if (admins.length === 0 || admins[0].role !== 'admin') {
+                return res.status(403).json({
+                    success: false,
+                    message: '只有管理员可以注册新管理员'
+                });
+            }
+
+            const hashedPassword = await bcrypt.hash(password, 10);
+
+            const [result] = await pool.execute(
+                'INSERT INTO users (username, password, role) VALUES (?, ?, ?)',
+                [username, hashedPassword, 'admin']
+            );
+
+            res.status(201).json({
+                success: true,
+                message: '管理员注册成功',
+                data: {
+                    id: result.insertId,
+                    username,
+                    role: 'admin'
+                }
+            });
+        } catch (error) {
+            if (error.code === 'ER_DUP_ENTRY') {
+                return res.status(400).json({
+                    success: false,
+                    message: '用户名已存在'
+                });
+            }
+            next(error);
+        }
+    }
+
+    async getUsers(req, res, next) {
+        try {
+            // 检查是否是管理员
+            const [admins] = await pool.execute(
+                'SELECT role FROM users WHERE id = ?',
+                [req.user.id]
+            );
+
+            if (admins.length === 0 || admins[0].role !== 'admin') {
+                return res.status(403).json({
+                    success: false,
+                    message: '只有管理员可以查看用户列表'
+                });
+            }
+
+            const [users] = await pool.execute(
+                'SELECT id, username, role, created_at FROM users ORDER BY created_at DESC'
+            );
+
+            res.json({
+                success: true,
+                data: users
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async updateUserRole(req, res, next) {
+        try {
+            const { userId } = req.params;
+            const { role } = req.body;
+
+            if (!['user', 'admin'].includes(role)) {
+                return res.status(400).json({
+                    success: false,
+                    message: '角色必须是 user 或 admin'
+                });
+            }
+
+            // 检查是否是管理员
+            const [admins] = await pool.execute(
+                'SELECT role FROM users WHERE id = ?',
+                [req.user.id]
+            );
+
+            if (admins.length === 0 || admins[0].role !== 'admin') {
+                return res.status(403).json({
+                    success: false,
+                    message: '只有管理员可以修改用户角色'
+                });
+            }
+
+            // 不能修改自己
+            if (parseInt(userId) === req.user.id) {
+                return res.status(400).json({
+                    success: false,
+                    message: '不能修改自己的角色'
+                });
+            }
+
+            await pool.execute(
+                'UPDATE users SET role = ? WHERE id = ?',
+                [role, userId]
+            );
+
+            res.json({
+                success: true,
+                message: '角色更新成功'
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async deleteUser(req, res, next) {
+        try {
+            const { userId } = req.params;
+
+            // 检查是否是管理员
+            const [admins] = await pool.execute(
+                'SELECT role FROM users WHERE id = ?',
+                [req.user.id]
+            );
+
+            if (admins.length === 0 || admins[0].role !== 'admin') {
+                return res.status(403).json({
+                    success: false,
+                    message: '只有管理员可以删除用户'
+                });
+            }
+
+            // 不能删除自己
+            if (parseInt(userId) === req.user.id) {
+                return res.status(400).json({
+                    success: false,
+                    message: '不能删除自己'
+                });
+            }
+
+            await pool.execute('DELETE FROM users WHERE id = ?', [userId]);
+
+            res.json({
+                success: true,
+                message: '用户删除成功'
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+}
+
+module.exports = new AuthController();
