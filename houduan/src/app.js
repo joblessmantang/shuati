@@ -1,6 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
 const { testConnection } = require('./config/database');
 const { errorHandler, notFoundHandler } = require('./middlewares/errorHandler');
 
@@ -43,17 +42,6 @@ app.use('/api/practiceHistory', historyRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/posts', postRoutes);
-
-// 生产环境：托管 Vue 打包后的静态文件
-if (process.env.NODE_ENV === 'production') {
-    const distPath = path.join(__dirname, '../shuati/dist');
-    app.use(express.static(distPath));
-
-    // 所有非 API 请求都返回 index.html（支持 SPA 路由）
-    app.get('*', (req, res) => {
-        res.sendFile(path.join(distPath, 'index.html'));
-    });
-}
 
 app.use(notFoundHandler);
 app.use(errorHandler);
