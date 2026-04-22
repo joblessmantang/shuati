@@ -1,7 +1,10 @@
 # 启动服务器
+
 cd houduan
 npm start
+
 # 或开发模式（代码改动自动重启）
+
 cd houduan
 npm run dev
 
@@ -10,8 +13,6 @@ taskkill /PID <PID号> /F
 
 cd shuati
 npm run serve
-
-
 
 部署步骤总结
 第 1 步：打包前端
@@ -26,7 +27,9 @@ NODE_ENV=production
 第 3 步：重启后端
 
 cd d:\VscodeProject\shuati0403\houduan
+
 # 开发模式自动重启
+
 npm run dev
 
 .env 保持现状（不写 NODE_ENV=production）→ 原方式继续用，前端 npm run dev（端口 5173）+ 后端 npm run dev（端口 3000）
