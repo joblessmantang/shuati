@@ -12,6 +12,9 @@ const historyRoutes = require('./routes/history');
 const reportRoutes = require('./routes/reports');
 const aiRoutes = require('./routes/ai');
 const postRoutes = require('./routes/posts');
+const checkInRoutes = require('./routes/checkIn');
+const goalRoutes = require('./routes/goals');
+const topicRoutes = require('./routes/topics');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -42,6 +45,9 @@ app.use('/api/practiceHistory', historyRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/posts', postRoutes);
+app.use('/api/checkIn', checkInRoutes);
+app.use('/api/goals', goalRoutes);
+app.use('/api/topics', topicRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
