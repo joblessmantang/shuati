@@ -167,3 +167,115 @@ sweetalert2: ^11.26.1
 ---
 
 *每次完成新功能后，请在本文件对应区域追加记录，保持文档时效性。*
+# 1. 运行迁移脚本（只需一次，自动幂等）
+cd d:\VscodeProject\shuati0403\houduan
+node src/scripts/migrate_learning.js
+
+# 2. 重启后端服务
+npm run serve
+
+# 3. 重启前端服务（用 npm run serve）
+全部后端实现完成
+以下是本次后端实现的完整总结。
+
+新增/修改文件清单
+文件路径	操作	说明
+src/scripts/migrate_learning.sql
+新增
+纯 SQL 迁移脚本（MySQL 8.x）
+src/scripts/migrate_learning.js
+新增
+Node.js 迁移运行脚本（幂等，可重复运行）
+src/services/checkInService.js
+新增
+签到服务层
+src/services/goalService.js
+新增
+学习目标服务层
+src/services/topicService.js
+新增
+专题服务层
+src/controllers/checkInController.js
+新增
+签到控制器
+src/controllers/goalController.js
+新增
+学习目标控制器（含 addProgress）
+src/controllers/topicController.js
+新增
+专题控制器
+src/routes/checkIn.js
+新增
+签到路由
+src/routes/goals.js
+新增
+学习目标路由
+src/routes/topics.js
+新增
+专题路由
+src/app.js
+修改
+注册 3 组新路由
+src/api/index.js (前端)
+修改
+新增 addProgress + 补全 userId 参数
+src/stores/learning.js (前端)
+修改
+addToGoalProgress 改为异步同步后端
+src/views/Topics.vue (前端)
+修改
+所有 topicApi 调用补 userId
+src/views/Quiz.vue (前端)
+修改
+topicApi.get 补 userId
+src/views/Favorites.vue (前端)
+修改
+topicApi.addQuestion 补 userId
+数据库设计
+表名	说明	关键字段
+check_ins
+每日签到
+user_id, checkin_date(UNIQUE), streak_days, total_days
+study_goals
+学习目标
+user_id, type(daily/weekly), target_count, current_count, start_date, end_date, status
+topics
+专题
+user_id, name, description, question_count(冗余), practice_count(预留)
+topic_questions
+专题-题目关联
+topic_id, question_id(UNIQUE), sort_order
+接口路由总览
+POST   /api/checkIn              # 签到
+GET    /api/checkIn?userId=xxx   # 获取签到记录
+GET    /api/goals?userId=xxx     # 获取当前目标
+POST   /api/goals                # 创建目标
+PATCH  /api/goals/:id             # 更新目标(type/target)
+PATCH  /api/goals/:id/progress    # 追加目标进度(练习提交时调用)
+GET    /api/topics?userId=xxx    # 专题列表
+GET    /api/topics/:id?userId=xxx # 专题详情(含题目)
+POST   /api/topics               # 创建专题
+PATCH  /api/topics/:id           # 更新专题
+DELETE /api/topics/:id?userId=xxx # 删除专题
+POST   /api/topics/:id/questions # 添加题目到专题
+DELETE /api/topics/:id/questions/:questionId?userId=xxx # 移除题目
+PATCH  /api/topics/:id/reorder   # 调整题目顺序
+联调步骤
+# 1. 运行迁移脚本（只需一次，自动幂等）
+cd d:\VscodeProject\shuati0403\houduan
+node src/scripts/migrate_learning.js
+# 2. 重启后端服务
+npm run serve
+# 3. 重启前端服务（用 npm run serve）
+种子数据包含：
+
+4 天连续签到记录（用户 tl）
+每日目标：20 题，当前 8/20
+每周目标：100 题，当前 35/100
+专题 1「JavaScript 核心概念」含 5 题
+专题 2「CSS 布局专项」含 3 题
+前后端联动关键点
+Home.vue：签到卡片、目标进度、专题入口 — 全部由对应 API 驱动
+Favorites.vue：选中收藏 → 创建专题，自动写入 topic_questions
+Topics.vue：完整 CRUD + 题目增删排 + 开始练习
+Quiz.vue：?mode=topic&topicId=xxx 模式加载专题题目；练习提交后通过 addToGoalProgress 异步同步到后端目标进度

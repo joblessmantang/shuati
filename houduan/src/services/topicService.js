@@ -1,4 +1,4 @@
-const { pool } = require('../config/database');
+﻿const { pool } = require('../config/database');
 
 function formatTopic(row) {
     if (!row) return null;
@@ -61,7 +61,7 @@ module.exports = {
         var topic = topicRows[0][0];
 
         if (userId && topicRows[0][0].userId !== userId) {
-            var err = new Error('无权查看该专�?);
+            var err = new Error('Not authorized to view this topic');
             err.status = 403;
             throw err;
         }
