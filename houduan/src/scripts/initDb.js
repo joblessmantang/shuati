@@ -81,6 +81,7 @@ async function initDatabase() {
                 score INT DEFAULT 0,
                 total INT NOT NULL,
                 timeSpent INT DEFAULT 0,
+                mode VARCHAR(20) NOT NULL DEFAULT 'normal',
                 createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
             )

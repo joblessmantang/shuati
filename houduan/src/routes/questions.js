@@ -5,6 +5,7 @@ const { authMiddleware, optionalAuth } = require('../middlewares/auth');
 
 router.get('/', questionController.getAllQuestions);
 router.get('/:id', questionController.getQuestionById);
+router.get('/:id/detail', optionalAuth, questionController.getQuestionDetail);
 router.post('/:id/check', optionalAuth, questionController.checkAnswer);
 router.post('/', authMiddleware, questionController.create);
 router.patch('/:id', authMiddleware, questionController.update);

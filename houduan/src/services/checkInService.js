@@ -145,7 +145,7 @@ class CheckInService {
 
     /**
      * 获取签到记录（供前端展示）
-     * 返回：今日是否已签到、连续天数、累计天数、本周签到日期列表
+     * 返回：今日是否已签到、连续天数、累计天数、本周签到日期列表、本月签到日期列表
      * @param {number} userId
      * @returns {Promise<object>}
      */
@@ -163,13 +163,14 @@ class CheckInService {
                 lastCheckInDate: null,
                 continuousDays: 0,
                 totalDays: 0,
-                lastCheckInDates: [],
+                weekCheckInDates: [],
+                monthCheckInDates: [],
             };
         }
 
         const latest = allRows[0];
 
-        // 本周（周一~周日）的签到日期
+        // 本周（周一~周日）
         const now = new Date();
         const monday = new Date(now);
         monday.setDate(now.getDate() - (now.getDay() === 0 ? 6 : now.getDay() - 1));
@@ -182,9 +183,25 @@ class CheckInService {
             weekDates.push(d.toISOString().slice(0, 10));
         }
 
-        const weekCheckIns = allRows.filter(r =>
-            weekDates.includes(new Date(r.checkin_date).toISOString().slice(0, 10))
-        );
+        // 本月（1日~月末）
+        const year = now.getFullYear();
+        const month = now.getMonth();
+        const monthStart = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+        const monthEnd = new Date(year, month + 1, 0).toISOString().slice(0, 10);
+
+        const weekCheckIns = allRows.filter(r => {
+            const d = r.checkin_date instanceof Date
+                ? r.checkin_date.toISOString().slice(0, 10)
+                : String(r.checkin_date);
+            return weekDates.includes(d);
+        });
+
+        const monthCheckIns = allRows.filter(r => {
+            const d = r.checkin_date instanceof Date
+                ? r.checkin_date.toISOString().slice(0, 10)
+                : String(r.checkin_date);
+            return d >= monthStart && d <= monthEnd;
+        });
 
         return {
             lastCheckInDate: latest.checkin_date instanceof Date
@@ -192,7 +209,12 @@ class CheckInService {
                 : String(latest.checkin_date),
             continuousDays: latest.streak_days,
             totalDays: latest.total_days,
-            lastCheckInDates: weekCheckIns.map(r =>
+            weekCheckInDates: weekCheckIns.map(r =>
+                r.checkin_date instanceof Date
+                    ? r.checkin_date.toISOString().slice(0, 10)
+                    : String(r.checkin_date)
+            ),
+            monthCheckInDates: monthCheckIns.map(r =>
                 r.checkin_date instanceof Date
                     ? r.checkin_date.toISOString().slice(0, 10)
                     : String(r.checkin_date)

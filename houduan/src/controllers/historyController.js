@@ -45,13 +45,14 @@ class HistoryController {
             const insertScore = Number(score) || 0;
             const insertTotal = Number(total);
             const insertTimeSpent = Number(timeSpent) || 0;
+            const insertMode = req.body.mode || 'normal';
             const insertCreatedAt = createdAt ? new Date(createdAt) : new Date();
 
-            console.log('[History] 准备插入数据库:', { insertUserId, insertScore, insertTotal, insertTimeSpent, insertCreatedAt });
+            console.log('[History] 准备插入数据库:', { insertUserId, insertScore, insertTotal, insertTimeSpent, insertCreatedAt, insertMode });
 
             const [result] = await pool.execute(
-                'INSERT INTO practice_history (userId, score, total, timeSpent, createdAt) VALUES (?, ?, ?, ?, ?)',
-                [insertUserId, insertScore, insertTotal, insertTimeSpent, insertCreatedAt]
+                'INSERT INTO practice_history (userId, score, total, timeSpent, mode, createdAt) VALUES (?, ?, ?, ?, ?, ?)',
+                [insertUserId, insertScore, insertTotal, insertTimeSpent, insertMode, insertCreatedAt]
             );
 
             console.log('[History] 数据库插入成功, id:', result.insertId);
@@ -64,7 +65,8 @@ class HistoryController {
                     userId: insertUserId,
                     score: insertScore,
                     total: insertTotal,
-                    timeSpent: insertTimeSpent
+                    timeSpent: insertTimeSpent,
+                    mode: insertMode
                 }
             });
         } catch (error) {

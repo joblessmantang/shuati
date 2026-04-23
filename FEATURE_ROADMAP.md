@@ -2,7 +2,7 @@
 
 > 本文件记录所有已完成的功能改造和待拓展功能清单。
 > 后续新增功能请在此文件的相关区域追加记录。
-> 最后更新：2026-04-22
+> 最后更新：2026-04-23
 
 ---
 
@@ -55,46 +55,159 @@ Hero 欢迎区（深绿渐变）
 
 ---
 
+### 1.2 第二阶段增强功能（2026-04-22）
+
+#### 1.2.1 知识图谱 / 能力雷达图
+
+**后端实现：**
+- 新增 `src/services/analysisService.js`：分类能力聚合计算（基于 `user_answers` + `questions` + `categories`）
+- 新增 `src/controllers/analysisController.js`
+- 新增 `src/routes/analysis.js`，注册路由 `GET /api/analysis/ability`
+- 接口：`GET /api/analysis/ability?userId=xxx`，返回各分类的 `total / correct / ability(%) / isWeak`
+- 无需新建表，纯聚合计算
+
+**前端实现：**
+- `src/views/Analytics.vue`：新增能力雷达图（ECharts radar）、分类掌握度列表、薄弱分类卡片
+- 雷达图展示各分类掌握程度，颜色为品牌绿色
+- 薄弱分类高亮红色，可直接跳转到对应分类练习
+
+**数据库变更：**
+- 无新表，`practice_history` 新增 `mode` 字段（见 1.2.2）
+
+---
+
+#### 1.2.2 练习模式增强
+
+**数据库变更：**
+- `practice_history` 表新增 `mode` VARCHAR(20) 字段（SQL：`migrate_practice_mode.sql`）
+- 支持模式：`normal` | `errors` | `mix` | `challenge` | `review`
+- 为已存在记录设置默认值 `normal`
+
+**后端实现：**
+- `src/controllers/historyController.js`：历史记录保存时支持 `mode` 参数
+- 模式通过 `POST /api/practiceHistory` 的 body 参数传递
+
+**前端实现：**
+- `src/components/StartScreen.vue`：5种练习模式卡片选择（普通/错题/混合/计时挑战/背题）
+  - 普通练习：`mode=normal`，随机抽题
+  - 错题练习：`mode=errors`，优先从错题本抽取
+  - 混合练习：`mode=mix`，错题+新题各半
+  - 计时挑战：`mode=challenge`，固定5题，限时（1/2/3/5分钟），超时常醒自动交卷
+  - 背题模式：`mode=review`，提交后直接展示答案，无需确认
+- `src/components/QuizHeader.vue`：新增模式标签（彩色badge）、挑战模式限时警告（红色闪烁）
+- `src/views/Quiz.vue`：
+  - 支持挑战模式超时自动交卷（SweetAlert 2s 后自动触发）
+  - 提交时将 `mode` 字段传给后端
+  - 背题模式跳过确认交卷弹窗
+
+---
+
+#### 1.2.3 题目详情页
+
+**后端实现：**
+- `src/controllers/questionController.js`：新增 `getQuestionDetail` 方法
+- 新增路由 `GET /api/questions/:id/detail?userId=xxx`
+- 聚合返回：题目信息 + 用户关系状态（收藏/错题/作答历史）+ 相似题（同分类）+ 相关帖子
+
+**前端实现：**
+- 新增 `src/views/QuestionDetail.vue`：
+  - 题目基本信息 + 选项展示
+  - "查看答案"按钮（保护答案隐私）
+  - 右侧边栏：用户学习状态（收藏/错题/作答次数/最近结果）
+  - 相似题推荐（同分类题目，最多5道）
+  - 相关帖子入口（关联本题的论坛帖子）
+  - 操作按钮：收藏/加入错题本/练习本类题目
+- `src/router/index.js`：注册路由 `path: "question/:id"`
+- 入口：首页推荐题 → 详情页；收藏页/错题本 → 详情页
+
+---
+
+#### 1.2.4 首页个性化推荐
+
+**后端实现：**
+- `src/services/analysisService.js`：`getHomeRecommendations()` 方法实现规则推荐
+- 新增路由 `GET /api/analysis/recommendations?userId=xxx`
+- 推荐策略：
+  1. 薄弱分类（错题最多 + 正确率最低的分类）
+  2. 推荐练习模式（基于近期正确率：<50%→错题模式，50-80%→混合，>80%→挑战）
+  3. 近期错题推荐（错题本最近3道）
+  4. 收藏题目推荐（收藏中最近3道）
+
+**前端实现：**
+- `src/api/index.js`：新增 `analysisApi`（`getAbility` + `getRecommendations`）
+- `src/views/Home.vue`：
+  - 登录用户新增"为你推荐"模块（位于概览区和推荐区之间）
+  - 练习模式推荐卡片：显示推荐模式 + 原因 + 立即开始按钮
+  - 薄弱分类列表：红色边框，点击跳转分类练习
+  - 需要复习的题目列表：链接到题目详情页
+  - 今日推荐题目卡片：从"立即作答"改为"查看详情"链接
+
+---
+
+#### 1.3 学习激励系统（2026-04-22）
+
+**数据库变更：**
+- 新增 `check_ins` 表（`user_id`, `checkin_date(UNIQUE)`, `streak_days`, `total_days`）
+- 新增 `study_goals` 表（`user_id`, `type(daily/weekly)`, `target_count`, `current_count`, `status`）
+- 新增 `topics` + `topic_questions` 表（专题 CRUD + 题目管理）
+- 迁移脚本：`houduan/src/scripts/migrate_learning.js`（幂等）
+
+**后端实现：**
+
+| 文件 | 说明 |
+|------|------|
+| `src/services/checkInService.js` | 签到逻辑（连续签到计算） |
+| `src/services/goalService.js` | 学习目标 CRUD + 进度追加 |
+| `src/services/topicService.js` | 专题 CRUD + 题目增删排 |
+| `src/controllers/checkInController.js` | 签到控制器 |
+| `src/controllers/goalController.js` | 学习目标控制器（含 `addProgress`） |
+| `src/controllers/topicController.js` | 专题控制器 |
+| `src/routes/checkIn.js` | `GET/POST /api/checkIn` |
+| `src/routes/goals.js` | `GET/POST/PATCH /api/goals`，`PATCH /api/goals/:id/progress` |
+| `src/routes/topics.js` | 专题 CRUD + 题目管理全套路由 |
+| `src/app.js` | 注册 3 组新路由 |
+
+**前端实现：**
+
+| 文件 | 说明 |
+|------|------|
+| `src/api/index.js` | 新增 `checkInApi`、`goalApi`（含 `addProgress`）、`topicApi` |
+| `src/stores/learning.js` | `addToGoalProgress` 改为异步同步后端 |
+| `src/views/Home.vue` | 签到卡片 + 目标进度 + 专题入口 |
+| `src/views/Favorites.vue` | 选中收藏 → 创建专题 |
+| `src/views/Topics.vue` | 专题完整 CRUD + 题目增删排 + 开始练习 |
+| `src/views/Quiz.vue` | `?mode=topic&topicId=xxx` 专题练习模式 |
+
+**前后端联动关键点：**
+- `Home.vue`：签到卡片、目标进度、专题入口全部由对应 API 驱动
+- `Favorites.vue`：选中收藏 → 创建专题，自动写入 `topic_questions`
+- `Topics.vue`：完整 CRUD + 题目增删排 + 开始练习
+- `Quiz.vue`：`?mode=topic&topicId=xxx` 模式加载专题题目；练习提交后通过 `addToGoalProgress` 异步同步到后端目标进度
+
+**种子数据：** 4天连续签到记录（用户 tl）、每日目标 20 题（8/20）、每周目标 100 题（35/100）、专题2个
+
+---
+
 ## 二、待拓展功能清单
 
 ### 2.1 高优先级（建议下一步）
 
-- [ ] **每日打卡/签到系统**
-  - 连续签到奖励机制
-  - 签到日历可视化
+- [ ] **每日打卡/签到奖励机制**
+  - 连续签到奖励机制（签到徽章/积分）
+  - [x] 签到日历可视化 ✅ 已完成（2026-04-23，点击签到卡片弹出 `CheckInCalendar` 月历弹窗）
   - 关联首页 Hero 区的"每日学习"徽章
 
-- [ ] **学习目标设定**
-  - 用户设定每日/每周刷题目标
-  - 首页概览卡展示目标进度条
-  - 达成目标后展示激励文案
+- [ ] **学习目标达成激励**
+  - 达成目标后展示激励文案/动画
+  - 目标达成徽章
 
-- [ ] **题目收藏 → 专题练习**
-  - 从收藏夹创建自定义专题
-  - 专题内题目可增删排序
-  - 专题入口放首页推荐区
+### 2.2 中优先级（已完成 ✅）
 
-### 2.2 中优先级
-
-- [ ] **知识图谱 / 能力雷达图**
-  - 基于分类统计绘制能力雷达图
-  - 展示各分类掌握程度
-  - 关联统计页面
-
-- [ ] **练习模式增强**
-  - 计时挑战模式（限时答完N题）
-  - 背题模式（只看不答）
-  - 闯关模式（连续答对N题解锁下一关）
-
-- [ ] **题目详情页**
-  - 查看本题完整解析
-  - 查看本题讨论区
-  - 关联相似题目推荐
-
-- [ ] **首页个性化推荐**
-  - 基于历史记录推荐薄弱分类
-  - 基于错题本推荐相关题目
-  - "你可能需要复习" 卡片
+- [x] **知识图谱 / 能力雷达图** ✅ 已完成（2026-04-22，见 1.2.1）
+- [x] **练习模式增强** ✅ 已完成（2026-04-22，见 1.2.2）
+- [x] **题目详情页** ✅ 已完成（2026-04-22，见 1.2.3）
+- [x] **首页个性化推荐** ✅ 已完成（2026-04-22，见 1.2.4）
+- [x] **学习激励系统（签到/目标/专题）** ✅ 已完成（2026-04-22，见 1.3）
 
 ### 2.3 低优先级（可后期做）
 
@@ -135,12 +248,25 @@ Hero 欢迎区（深绿渐变）
 |------|---------|------|
 | 认证 | `/api/auth` | 登录/注册/用户信息 |
 | 题目 | `/api/questions` | CRUD + 搜索 + 分类筛选 |
+| 题目详情 | `/api/questions/:id/detail` | 题目学习中心（含关系状态/相似题/相关帖子） |
 | 分类 | `/api/categories` | 分类列表 |
 | 错题本 | `/api/wrongBook` | 按 userId 过滤 |
 | 收藏 | `/api/favorites` | 按 userId 过滤 |
-| 历史 | `/api/practiceHistory` | 按 userId 过滤 |
+| 历史 | `/api/practiceHistory` | 按 userId 过滤（支持 mode 字段） |
 | 论坛 | `/api/posts` | 帖子 CRUD + 评论 |
 | AI | `/api/ai` | 提示词/解析 |
+| 签到 | `/api/checkIn` | 每日签到 |
+| 目标 | `/api/goals` | 学习目标 |
+| 专题 | `/api/topics` | 专题 CRUD + 题目管理 |
+| **分析** | `/api/analysis` | **知识图谱/能力分析 + 首页个性化推荐**（2026-04-22 新增） |
+
+**新增接口（2026-04-22）：**
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/api/analysis/ability?userId=xxx` | GET | 分类能力分析（知识图谱） |
+| `/api/analysis/recommendations?userId=xxx` | GET | 首页个性化推荐 |
+| `/api/questions/:id/detail?userId=xxx` | GET | 题目详情聚合页 |
 
 > 新增功能若需后端接口，请在 `src/api/index.js` 中按现有格式追加。
 

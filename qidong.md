@@ -34,3 +34,7 @@ npm run dev
 
 .env 保持现状（不写 NODE_ENV=production）→ 原方式继续用，前端 npm run dev（端口 5173）+ 后端 npm run dev（端口 3000）
 打包部署时 → 只需在 .env 加一行 NODE_ENV=production，前端 dist/ 由后端托管
+
+运行 houduan/src/scripts/migrate_practice_mode.sql 添加 mode 字段
+重启后端服务
+shuati 前端 npm run serve 即可预览

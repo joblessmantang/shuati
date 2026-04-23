@@ -1,4 +1,5 @@
 const { pool } = require('../config/database');
+const analysisService = require('../services/analysisService');
 
 class QuestionController {
     async getAllQuestions(req, res, next) {
@@ -59,6 +60,60 @@ class QuestionController {
                     options: typeof questions[0].options === 'string'
                         ? JSON.parse(questions[0].options)
                         : questions[0].options
+                }
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * GET /api/questions/:id/detail?userId=xxx
+     * 题目详情页聚合接口
+     * 返回：题目信息 + 用户关系状态 + 相似题 + 相关帖子
+     */
+    async getQuestionDetail(req, res, next) {
+        try {
+            const { id } = req.params;
+            const { userId } = req.query;
+
+            const [questions] = await pool.execute(
+                'SELECT id, title, code, options, correctAnswer, categoryId, created_at FROM questions WHERE id = ?',
+                [id]
+            );
+
+            if (questions.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: '题目不存在'
+                });
+            }
+
+            const question = questions[0];
+            const options = typeof question.options === 'string'
+                ? JSON.parse(question.options)
+                : question.options;
+
+            // 并行获取：用户关系 + 相似题 + 相关帖子
+            const [relation, similar, posts] = await Promise.all([
+                userId ? analysisService.getQuestionRelation(parseInt(userId), parseInt(id)) : Promise.resolve(null),
+                analysisService.getSimilarQuestions(parseInt(id), 5),
+                analysisService.getRelatedPosts(parseInt(id))
+            ]);
+
+            res.json({
+                success: true,
+                data: {
+                    id: question.id,
+                    title: question.title,
+                    code: question.code,
+                    options,
+                    correctAnswer: question.correctAnswer,
+                    categoryId: question.categoryId,
+                    created_at: question.created_at,
+                    relation,
+                    similarQuestions: similar,
+                    relatedPosts: posts
                 }
             });
         } catch (error) {
