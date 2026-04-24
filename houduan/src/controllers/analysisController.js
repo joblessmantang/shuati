@@ -11,7 +11,7 @@ class AnalysisController {
      */
     async getAbility(req, res, next) {
         try {
-            const { userId } = req.query;
+            const { userId, range } = req.query;
 
             if (!userId) {
                 return res.status(400).json({
@@ -20,7 +20,8 @@ class AnalysisController {
                 });
             }
 
-            const ability = await analysisService.getCategoryAbility(parseInt(userId));
+            const validRange = ['week', 'month'].includes(range) ? range : null;
+            const ability = await analysisService.getCategoryAbility(parseInt(userId), validRange);
 
             res.json({
                 success: true,

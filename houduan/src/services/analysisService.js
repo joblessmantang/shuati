@@ -18,11 +18,20 @@ const { pool } = require('../config/database');
  *   - 能力值 = correct / total (%)
  *   - 若该分类无做题记录，能力值 = null
  *   - 推荐程度：基于错题数和最近表现
+ * @param {number} userId
+ * @param {string|null} range - null|'all'|'week'|'month'
  */
-async function getCategoryAbility(userId) {
+async function getCategoryAbility(userId, range = null) {
     const [cats] = await pool.execute(
         'SELECT id, name FROM categories ORDER BY id ASC'
     );
+
+    let dateFilter = '';
+    if (range === 'week') {
+        dateFilter = ' AND ua.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)';
+    } else if (range === 'month') {
+        dateFilter = ' AND ua.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)';
+    }
 
     const [rows] = await pool.query(`
         SELECT
@@ -31,7 +40,7 @@ async function getCategoryAbility(userId) {
             SUM(CASE WHEN ua.is_correct = 1 THEN 1 ELSE 0 END) AS correct
         FROM user_answers ua
         JOIN questions q ON ua.question_id = q.id
-        WHERE ua.user_id = ? AND q.categoryId IS NOT NULL
+        WHERE ua.user_id = ? AND q.categoryId IS NOT NULL${dateFilter}
         GROUP BY q.categoryId
     `, [userId]);
 
@@ -66,6 +75,7 @@ async function getCategoryAbility(userId) {
             categoryName: cat.name,
             total: stat.total,
             correct: stat.correct,
+            wrongCount: stat.total - stat.correct,
             ability,
             isWeak: weakCatIds.has(cat.id)
         };

@@ -20,21 +20,38 @@ class UserAnswersController {
                 });
             }
 
-            const values = answers.map(a => [
-                Number(userId),
-                Number(a.questionId),
-                a.selectedIndex !== undefined ? Number(a.selectedIndex) : null,
-                Boolean(a.isCorrect)
-            ]);
+            const uid = Number(userId);
+            if (isNaN(uid) || uid <= 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'userId 无效'
+                });
+            }
 
-            await pool.query(
-                `INSERT INTO user_answers (user_id, question_id, selected_index, is_correct) VALUES ?`,
-                [values]
-            );
+            let saved = 0;
+            for (const a of answers) {
+                const rawQid = a.questionId;
+                const parsedQid = Number(rawQid);
+                if (Number.isNaN(parsedQid) || !Number.isFinite(parsedQid)) {
+                    console.warn('[userAnswers] 跳过无效 questionId:', rawQid, typeof rawQid, JSON.stringify(a));
+                    continue;
+                }
+
+                const rawSelected = a.selectedIndex;
+                const parsedSelected = rawSelected != null ? Number(rawSelected) : null;
+                const finalSelected = (parsedSelected != null && Number.isFinite(parsedSelected)) ? parsedSelected : null;
+                const finalCorrect = a.isCorrect ? 1 : 0;
+
+                await pool.query(
+                    `INSERT IGNORE INTO user_answers (user_id, question_id, selected_index, is_correct) VALUES (?, ?, ?, ?)`,
+                    [uid, parsedQid, finalSelected, finalCorrect]
+                );
+                saved++;
+            }
 
             res.status(201).json({
                 success: true,
-                message: `已保存 ${answers.length} 条答题记录`
+                message: `已保存 ${saved} 条答题记录`
             });
         } catch (error) {
             next(error);
