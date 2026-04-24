@@ -1,7 +1,9 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const { testConnection } = require('./config/database');
 const { errorHandler, notFoundHandler } = require('./middlewares/errorHandler');
+const uploadMiddleware = require('./middlewares/upload');
 
 const authRoutes = require('./routes/auth');
 const questionRoutes = require('./routes/questions');
@@ -17,6 +19,7 @@ const checkInRoutes = require('./routes/checkIn');
 const goalRoutes = require('./routes/goals');
 const topicRoutes = require('./routes/topics');
 const analysisRoutes = require('./routes/analysis');
+const resourceRoutes = require('./routes/resources');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,6 +27,12 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// 静态文件服务（上传的资料和封面）
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
+// 文件上传路由
+app.use('/api/upload', uploadMiddleware);
 
 app.use((req, res, next) => {
     console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
@@ -52,6 +61,7 @@ app.use('/api/checkIn', checkInRoutes);
 app.use('/api/goals', goalRoutes);
 app.use('/api/topics', topicRoutes);
 app.use('/api/analysis', analysisRoutes);
+app.use('/api/resources', resourceRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

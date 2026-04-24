@@ -55,6 +55,61 @@ shuati0403/
 
 ## 更新记录
 
+### 2026-04-23 学习资料库
+
+新增「学习资料 / 书籍资料库」功能模块：
+
+- 首页新增「学习资料」入口卡片，展示 1~4 本推荐资料，支持点击跳转资料库
+- 新增资料列表页 `Resources.vue`：`/` 路径，含分类筛选、关键词搜索、分页
+- 新增资料详情弹窗 `ResourceDetail.vue`：封面、简介、适合学习内容（跳转分类练习）、下载入口
+- 推荐逻辑（规则匹配）：基于用户最近 30 天薄弱分类（正确率 < 60%），匹配资料关联知识点
+- 后端新增 `resources` 表、`resource_topics` 关联表；文件上传中间件支持封面图 + PDF
+- 管理后台新增资料管理页 `AdminResources.vue`：CRUD、封面上传、文件上传、关联知识点勾选、推荐标记
+- 新增 6 本示例资料种子数据
+
+**后端新增接口：**
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/resources` | 列表（分页/分类/关键词/推荐筛选） |
+| GET | `/api/resources/recommended?userId=xxx` | 基于薄弱点推荐 |
+| GET | `/api/resources/:id` | 详情 |
+| GET | `/api/resources/:id/download` | 下载 |
+| GET | `/api/resources/admin/list` | 管理列表 |
+| POST | `/api/resources` | 创建（需管理员） |
+| PATCH | `/api/resources/:id` | 编辑（需管理员） |
+| DELETE | `/api/resources/:id` | 删除（需管理员） |
+| POST | `/api/upload/cover` | 封面上传 |
+| POST | `/api/upload/file` | 资料文件上传 |
+
+**涉及文件：**
+
+| 文件 | 说明 |
+|------|------|
+| `houduan/src/scripts/migrate_resources.sql` | 新建，数据库表 + 示例数据 |
+| `houduan/src/middlewares/upload.js` | 新建，文件上传中间件 |
+| `houduan/src/services/resourceService.js` | 新建，资料 CRUD + 推荐逻辑 |
+| `houduan/src/controllers/resourceController.js` | 新建，控制器 |
+| `houduan/src/routes/resources.js` | 新建，路由 |
+| `houduan/src/app.js` | 注册新路由和静态文件 |
+| `shuati/src/api/index.js` | 新增 `resourceApi`、`uploadApi` |
+| `shuati/src/views/Resources.vue` | 新建，资料列表页 |
+| `shuati/src/components/ResourceDetail.vue` | 新建，资料详情弹窗 |
+| `shuati/src/views/Home.vue` | 新增资料入口卡片 |
+| `shuati/src/views/admin/AdminResources.vue` | 新建，管理页 |
+| `shuati/src/views/admin/*.vue` | 补全现有缺失存根页 |
+| `shuati/src/router/index.js` | 注册 `/resources`、`/admin/resources` 路由 |
+| `shuati/src/views/admin/AdminLayout.vue` | 侧边栏 + 面包屑加资料管理入口 |
+
+**数据库迁移：** 运行以下 SQL 后重启后端
+
+```bash
+cd d:\VscodeProject\shuati0403\houduan
+mysql -u root -p interview_platform < src/scripts/migrate_resources.sql
+```
+
+---
+
 ### 2026-04-23 签到体验升级
 
 签到卡片升级为「点击弹出日历面板」交互：
@@ -388,6 +443,8 @@ wrongBookApi   // list, add, remove, removeByUserAndQuestion
 favoritesApi   // list, add, remove, removeByUserAndQuestion
 historyApi     // list, add
 analysisApi    // getAbility, getRecommendations ← 新增
+resourceApi   // list, getRecommended, get, adminList, create, update, remove ← 新增
+uploadApi     // uploadCover, uploadFile ← 新增
 checkInApi     // getRecord, checkIn
 goalApi        // getGoal, setGoal, updateGoal, addProgress
 topicApi       // list, get, create, update, remove, addQuestion, removeQuestion, reorderQuestions

@@ -38,3 +38,12 @@ npm run dev
 运行 houduan/src/scripts/migrate_practice_mode.sql 添加 mode 字段
 重启后端服务
 shuati 前端 npm run serve 即可预览
+
+## 资料库迁移
+首次使用资料功能时需要执行迁移创建数据表和示例数据：
+```bash
+cd houduan
+node src/scripts/runMigrate.js
+```
+执行成功后会输出：`执行成功！资源表、示例数据已就绪。`
+详见《学习资料管理说明.md》
