@@ -98,7 +98,7 @@ class PostController {
             const offset = (parseInt(page) - 1) * parseInt(limit);
 
             let query = `
-                SELECT p.*, u.username as author_name, q.title as question_title, q.categoryId,
+                SELECT p.*, u.username as author_name, u.avatar_url as author_avatar, q.title as question_title, q.categoryId,
                     (SELECT COUNT(*) FROM comments WHERE post_id = p.id) as comment_count
                 FROM posts p
                 JOIN users u ON p.user_id = u.id
@@ -157,7 +157,7 @@ class PostController {
             );
 
             const [posts] = await pool.execute(`
-                SELECT p.*, u.username as author_name,
+                SELECT p.*, u.username as author_name, u.avatar_url as author_avatar,
                     q.title as question_title, q.categoryId, q.options as question_options, q.correctAnswer as question_answer,
                     c_cat.name as category_name,
                     (SELECT COUNT(*) FROM comments WHERE post_id = p.id) as comment_count
@@ -182,7 +182,7 @@ class PostController {
 
             // 评论排序：采纳 > 精选 > 点赞数 > 时间
             const [comments] = await pool.execute(`
-                SELECT c.*, u.username as author_name
+                SELECT c.*, u.username as author_name, u.avatar_url as author_avatar
                 FROM comments c
                 JOIN users u ON c.user_id = u.id
                 WHERE c.post_id = ?

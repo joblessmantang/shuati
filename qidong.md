@@ -47,3 +47,13 @@ node src/scripts/runMigrate.js
 ```
 执行成功后会输出：`执行成功！资源表、示例数据已就绪。`
 详见《学习资料管理说明.md》
+
+//js代码
+# 1. 运行迁移（只需一次）
+cd d:\VscodeProject\shuati0403\houduan
+node src/scripts/migrate_js_code_question.js
+
+# 2. 插入演示数据
+mysql -u root -p interview_platform < src/scripts/seedJsCodeQuestions.sql
+
+# 3. 重启后端和前端

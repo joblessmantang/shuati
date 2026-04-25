@@ -1,6 +1,34 @@
 const { pool } = require('../config/database');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
+
+// 头像上传配置（复用封面图上传目录）
+const avatarStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = path.join(__dirname, '../../uploads/avatars');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `avatar_${req.user.id}_${Date.now()}${ext}`);
+  }
+});
+const avatarFilter = (req, file, cb) => {
+  const allowed = /jpeg|jpg|png|webp|gif/;
+  const ext = allowed.test(path.extname(file.originalname).toLowerCase());
+  const mime = allowed.test(file.mimetype);
+  if (ext && mime) cb(null, true);
+  else cb(new Error('仅支持 jpg/png/webp/gif 格式的图片'), false);
+};
+const uploadAvatar = multer({
+  storage: avatarStorage,
+  fileFilter: avatarFilter,
+  limits: { fileSize: 2 * 1024 * 1024 } // 2MB
+});
 
 class AuthController {
     async register(req, res, next) {
@@ -50,7 +78,8 @@ class AuthController {
                 user: {
                     id: result.insertId,
                     username,
-                    role: userRole
+                    role: userRole,
+                    avatar_url: null
                 }
             });
         } catch (error) {
@@ -108,7 +137,8 @@ class AuthController {
                 user: {
                     id: user.id,
                     username: user.username,
-                    role: user.role
+                    role: user.role,
+                    avatar_url: user.avatar_url || null
                 }
             });
         } catch (error) {
@@ -119,7 +149,7 @@ class AuthController {
     async getCurrentUser(req, res) {
         try {
             const [users] = await pool.execute(
-                'SELECT id, username, role FROM users WHERE id = ?',
+                'SELECT id, username, role, avatar_url, created_at FROM users WHERE id = ?',
                 [req.user.id]
             );
 
@@ -220,7 +250,7 @@ class AuthController {
             }
 
             const [users] = await pool.execute(
-                'SELECT id, username, role, created_at FROM users ORDER BY created_at DESC'
+                'SELECT id, username, role, avatar_url, created_at FROM users ORDER BY created_at DESC'
             );
 
             res.json({
@@ -313,6 +343,37 @@ class AuthController {
         } catch (error) {
             next(error);
         }
+    }
+
+    /** POST /api/auth/avatar - 上传用户头像 */
+    uploadAvatar(req, res, next) {
+        uploadAvatar.single('avatar')(req, res, async (err) => {
+            if (err) {
+                if (err.message.includes('格式')) {
+                    return res.status(400).json({ success: false, message: err.message });
+                }
+                if (err.message.includes('File too large')) {
+                    return res.status(400).json({ success: false, message: '图片大小不能超过 2MB' });
+                }
+                return res.status(500).json({ success: false, message: '头像上传失败' });
+            }
+            if (!req.file) {
+                return res.status(400).json({ success: false, message: '请选择头像图片' });
+            }
+            const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+            try {
+                await pool.execute(
+                    'UPDATE users SET avatar_url = ? WHERE id = ?',
+                    [avatarUrl, req.user.id]
+                );
+                res.json({
+                    success: true,
+                    data: { avatar_url: avatarUrl }
+                });
+            } catch (dbError) {
+                next(dbError);
+            }
+        });
     }
 }
 

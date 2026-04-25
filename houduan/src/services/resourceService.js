@@ -235,7 +235,7 @@ class ResourceService {
 
     const weakCategoryIds = weakRows.map(w => w.category_id);
 
-    // 2. 查询匹配的资料
+    // 2. 查询匹配的资料（按 resource_topics 关联分类）
     const [rows] = await pool.query(
       `SELECT DISTINCT r.*, c.name as category_name, u.username as uploader_name
        FROM resources r
@@ -248,7 +248,21 @@ class ResourceService {
       [weakCategoryIds, limit]
     );
 
-    const items = await Promise.all(rows.map(r => this._formatResource(r)));
+    // 3. 如果通过 resource_topics 匹配不到，退而求全：直接取推荐资料
+    let items = await Promise.all(rows.map(r => this._formatResource(r)));
+    if (items.length === 0) {
+      const [fallbackRows] = await pool.query(
+        `SELECT r.*, c.name as category_name, u.username as uploader_name
+         FROM resources r
+         LEFT JOIN categories c ON r.category_id = c.id
+         LEFT JOIN users u ON r.uploader_id = u.id
+         WHERE r.is_recommended = 1
+         ORDER BY r.view_count DESC
+         LIMIT ?`,
+        [limit]
+      );
+      items = await Promise.all(fallbackRows.map(r => this._formatResource(r)));
+    }
 
     return {
       items,

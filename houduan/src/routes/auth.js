@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
-const { authMiddleware, optionalAuth } = require('../middlewares/auth');
+const { authMiddleware } = require('../middlewares/auth');
 
 // 公开注册（注册普通用户）
 router.post('/register', authController.register);
@@ -13,5 +13,7 @@ router.get('/me', authMiddleware, authController.getCurrentUser);
 router.get('/users', authMiddleware, authController.getUsers);
 router.patch('/users/:userId/role', authMiddleware, authController.updateUserRole);
 router.delete('/users/:userId', authMiddleware, authController.deleteUser);
+// 头像上传（需要认证）
+router.post('/avatar', authMiddleware, authController.uploadAvatar);
 
 module.exports = router;

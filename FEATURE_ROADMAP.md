@@ -2,13 +2,139 @@
 
 > 本文件记录所有已完成的功能改造和待拓展功能清单。
 > 后续新增功能请在此文件的相关区域追加记录。
-> 最后更新：2026-04-23
+> 最后更新：2026-04-24
 
 ---
 
 ## 一、已完成改造（已上线）
 
-### 1.1 界面现代化升级（2026-04-22）
+### 1.1 JS 代码题（2026-04-24）
+
+**设计原则：**
+- 不改 `questions` 主表结构，新增 `question_js_code` 扩展表
+- 复用现有 `question.id` 主键，收藏/错题本/历史记录无需改动
+- 复用现有 `categoryId` 分类体系
+- 第一阶段支持：选择题模式（选输出结果）和填空题模式（填执行结果）
+
+**数据库变更：**
+- `questions` 表新增 `question_type ENUM('normal','js_code') DEFAULT 'normal'` 字段
+- 新建 `question_js_code` 扩展表：
+  - `question_id` UNIQUE（1:1 关联主表）
+  - `code_snippet`：代码片段（核心内容）
+  - `answer_mode`：作答模式（`select`/`fill`）
+  - `explanation`：解析说明
+  - `difficulty`：难度 1-3
+  - `knowledge_points`：知识点标签（逗号分隔）
+
+**后端实现：**
+- `src/scripts/migrate_js_code_question.sql`：DDL 迁移脚本
+- `src/scripts/migrate_js_code_question.js`：幂等迁移运行脚本
+- `src/scripts/seedJsCodeQuestions.sql`：7 道演示代码题
+- `src/controllers/questionController.js`：
+  - `getAllQuestions`：附加 `question_type` 和 `jsCodeMeta`，支持 `questionType` 参数过滤
+  - `getQuestionById`：附加 `jsCodeMeta` 完整信息
+  - `getQuestionDetail`：同步附加代码题信息
+  - `create`/`update`/`remove`：支持写入和联动管理扩展表
+
+**前端实现：**
+- `src/components/QuestionCard.vue`：
+  - 检测 `question_type === 'js_code'` 展示专属样式
+  - 深色代码区域（VS Code 风格），知识点标签
+  - 选择题模式：同普通题展示选项
+  - 填空题模式：文本输入框交互
+  - 交卷后显示解析说明
+- `src/views/admin/AdminQuestions.vue`：
+  - 列表页新增"类型"列和按类型筛选
+  - 表单新增题目类型选择（普通题 / JS 代码题）
+  - 代码题专属表单：代码片段 / 作答模式 / 难度 / 知识点 / 解析说明
+  - 普通题与代码题表单字段随类型切换动态变化
+
+**接口变更：**
+- `GET /api/questions` 新增 `question_type`、`jsCodeMeta` 字段
+- `GET /api/questions/:id` 新增 `question_type`、`jsCodeMeta` 字段
+- `GET /api/questions/:id/detail` 新增 `question_type`、`jsCodeMeta` 字段
+- `POST/PATCH /api/questions` 支持 `question_type` 和 `jsCodeMeta` 参数
+
+**联调步骤：**
+```bash
+# 1. 运行迁移脚本（只需一次）
+cd d:\VscodeProject\shuati0403\houduan
+node src/scripts/migrate_js_code_question.js
+
+# 2. 运行 seed 数据（可选）
+mysql -u root -p interview_platform < src/scripts/seedJsCodeQuestions.sql
+
+# 3. 重启后端
+node src/index.js
+
+# 4. 重启前端
+cd ../shuati && npm run serve
+```
+
+---
+
+### 1.2 用户头像功能（2026-04-24）
+
+**设计原则：**
+- 不改动现有登录/用户体系，新增 `avatar_url` 字段即全部增量
+- 默认头像纯前端生成，不依赖后端图片文件
+- 上传头像复用现有 multer 中间件，存 `uploads/avatars/`
+- 抽离 `UserAvatar.vue` 统一组件，避免多处重复实现
+
+**数据库变更：**
+- `users` 表新增 `avatar_url VARCHAR(500) DEFAULT NULL` 字段
+
+**后端实现：**
+- `src/controllers/authController.js`：
+  - `register`：新用户返回 `avatar_url: null`
+  - `login`：返回 `avatar_url` 字段
+  - `getCurrentUser`（`GET /auth/me`）：返回 `avatar_url`
+  - `getUsers`（`GET /auth/users`）：返回 `avatar_url`
+  - 新增 `uploadAvatar` 方法（multer 头像上传，限制 2MB，支持 jpg/png/webp/gif）
+- `src/routes/auth.js`：新增 `POST /api/auth/avatar` 路由
+- `src/controllers/postController.js`：
+  - 帖子列表 JOIN 新增 `u.avatar_url as author_avatar`
+  - 帖子详情 JOIN 新增 `u.avatar_url as author_avatar`
+  - 评论列表 JOIN 新增 `u.avatar_url as author_avatar`
+
+**前端实现：**
+- 新增 `src/components/UserAvatar.vue`：
+  - Props：`username`（必填）、`avatarUrl`（可选）、`size`（sm/md/lg/xl/number）
+  - `avatarUrl` 有值：显示 `<img>` 标签（支持相对/绝对 URL）
+  - `avatarUrl` 为空/null：显示默认首字符头像（英文转大写，中文原样显示，异常显示 `?`）
+  - 颜色映射：基于 username 字符码哈希，8 种预设柔和渐变色
+  - 支持 `img @error` 回退机制
+- `src/api/index.js`：`authApi.uploadAvatar(formData)` 新增方法
+- `src/components/NavBar.vue`：用 `UserAvatar` 替换原有 `.user-avatar` 首字符逻辑
+- `src/views/Forum.vue`：帖子列表作者区用 `UserAvatar` 替换 `.avatar-sm`
+- `src/components/ForumPostDetail.vue`：帖子详情 + 评论用 `UserAvatar` 替换 `.avatar`
+- `src/views/admin/AdminUsers.vue`：表格新增"头像"列，`UserAvatar` 展示
+- `src/views/Home.vue`：
+  - Hero 右侧新增用户资料卡（含用户名/角色）
+  - 资料卡内头像支持点击上传（`<label>` 包裹 `<input type=file>`）
+  - 上传成功后更新 store 和 localStorage 中的 `user.avatar_url`
+
+**接口变更：**
+- `POST /api/auth/avatar`：上传头像（FormData，单字段 `avatar`），返回 `{ avatar_url }`
+- 登录/注册/`/me`/`/users` 响应均新增 `avatar_url` 字段
+- 帖子/评论接口返回新增 `author_avatar` 字段
+
+**默认头像颜色映射（8种）：**
+
+| 序号 | 渐变色 | 风格 |
+|---|---|---|
+| 1 | #2D6A4F → #40916C | 品牌绿 |
+| 2 | #3B82F6 → #60A5FA | 蓝色 |
+| 3 | #8B5CF6 → #A78BFA | 紫色 |
+| 4 | #EC4899 → #F472B6 | 粉色 |
+| 5 | #F59E0B → #FCD34D | 橙黄 |
+| 6 | #10B981 → #6EE7B7 | 青绿 |
+| 7 | #EF4444 → #FCA5A5 | 红色 |
+| 8 | #0EA5E9 → #38BDF8 | 天蓝 |
+
+---
+
+### 1.3 界面现代化升级（2026-04-22）
 
 **改造范围：**
 
@@ -55,9 +181,9 @@ Hero 欢迎区（深绿渐变）
 
 ---
 
-### 1.2 第二阶段增强功能（2026-04-22）
+### 1.4 第二阶段增强功能（2026-04-22）
 
-#### 1.2.1 知识图谱 / 能力雷达图
+#### 1.4.1 知识图谱 / 能力雷达图
 
 **后端实现：**
 - 新增 `src/services/analysisService.js`：分类能力聚合计算（基于 `user_answers` + `questions` + `categories`）
@@ -76,7 +202,7 @@ Hero 欢迎区（深绿渐变）
 
 ---
 
-#### 1.2.2 练习模式增强
+#### 1.4.2 练习模式增强
 
 **数据库变更：**
 - `practice_history` 表新增 `mode` VARCHAR(20) 字段（SQL：`migrate_practice_mode.sql`）
@@ -102,7 +228,7 @@ Hero 欢迎区（深绿渐变）
 
 ---
 
-#### 1.2.3 题目详情页
+#### 1.4.3 题目详情页
 
 **后端实现：**
 - `src/controllers/questionController.js`：新增 `getQuestionDetail` 方法
@@ -122,7 +248,7 @@ Hero 欢迎区（深绿渐变）
 
 ---
 
-#### 1.2.4 首页个性化推荐
+#### 1.4.4 首页个性化推荐
 
 **后端实现：**
 - `src/services/analysisService.js`：`getHomeRecommendations()` 方法实现规则推荐
@@ -144,7 +270,7 @@ Hero 欢迎区（深绿渐变）
 
 ---
 
-#### 1.3 学习激励系统（2026-04-22）
+### 1.5 学习激励系统（2026-04-22）
 
 **数据库变更：**
 - 新增 `check_ins` 表（`user_id`, `checkin_date(UNIQUE)`, `streak_days`, `total_days`）
@@ -191,6 +317,12 @@ Hero 欢迎区（深绿渐变）
 ## 二、待拓展功能清单
 
 ### 2.1 高优先级（建议下一步）
+
+- [ ] **JS 代码题后续增强**（见 1.1）
+  - 支持在线运行代码（需引入沙箱，如 VM2）
+  - 代码补全/填空题目（用户需补充部分代码）
+  - 代码题独立入口和筛选
+  - 代码题统计（代码题专项正确率）
 
 - [ ] **每日打卡/签到奖励机制**
   - 连续签到奖励机制（签到徽章/积分）

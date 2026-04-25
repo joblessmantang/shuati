@@ -4,33 +4,59 @@ const analysisService = require('../services/analysisService');
 class QuestionController {
     async getAllQuestions(req, res, next) {
         try {
-            const { categoryId, q, page = 1, limit = 100 } = req.query;
+            const { categoryId, q, page = 1, limit = 100, questionType } = req.query;
             const offset = (page - 1) * limit;
 
-            let query = 'SELECT id, title, code, options, correctAnswer, categoryId, created_at FROM questions WHERE 1=1';
+            let query = `
+                SELECT
+                    q.id, q.title, q.code, q.options, q.correctAnswer,
+                    q.categoryId, q.question_type, q.created_at,
+                    qjc.code_snippet, qjc.answer_mode, qjc.difficulty, qjc.knowledge_points
+                FROM questions q
+                LEFT JOIN question_js_code qjc ON q.id = qjc.question_id
+                WHERE 1=1
+            `;
             const params = [];
 
             if (categoryId) {
-                query += ' AND categoryId = ?';
+                query += ' AND q.categoryId = ?';
                 params.push(parseInt(categoryId));
             }
 
             if (q) {
-                query += ' AND (title LIKE ? OR code LIKE ?)';
+                query += ' AND (q.title LIKE ? OR q.code LIKE ?)';
                 params.push(`%${q}%`, `%${q}%`);
             }
 
-            query += ' ORDER BY id ASC LIMIT ? OFFSET ?';
+            if (questionType) {
+                query += ' AND q.question_type = ?';
+                params.push(questionType);
+            }
+
+            query += ' ORDER BY q.id ASC LIMIT ? OFFSET ?';
             params.push(parseInt(limit), parseInt(offset));
 
             const [questions] = await pool.query(query, params);
 
             res.json({
                 success: true,
-                data: questions.map(q => ({
-                    ...q,
-                    options: typeof q.options === 'string' ? JSON.parse(q.options) : q.options
-                }))
+                data: questions.map(q => {
+                    const base = {
+                        ...q,
+                        options: typeof q.options === 'string' ? JSON.parse(q.options) : q.options
+                    };
+                    if (q.question_type === 'js_code' && q.code_snippet) {
+                        base.jsCodeMeta = {
+                            code_snippet: q.code_snippet,
+                            answer_mode: q.answer_mode,
+                            difficulty: q.difficulty,
+                            knowledge_points: q.knowledge_points
+                        };
+                    } else {
+                        base.jsCodeMeta = null;
+                    }
+                    return base;
+                })
             });
         } catch (error) {
             next(error);
@@ -41,10 +67,16 @@ class QuestionController {
         try {
             const { id } = req.params;
 
-            const [questions] = await pool.execute(
-                'SELECT id, title, code, options, correctAnswer, categoryId, created_at FROM questions WHERE id = ?',
-                [id]
-            );
+            const [questions] = await pool.execute(`
+                SELECT
+                    q.id, q.title, q.code, q.options, q.correctAnswer,
+                    q.categoryId, q.question_type, q.created_at,
+                    qjc.code_snippet, qjc.answer_mode, qjc.explanation,
+                    qjc.difficulty, qjc.knowledge_points
+                FROM questions q
+                LEFT JOIN question_js_code qjc ON q.id = qjc.question_id
+                WHERE q.id = ?
+            `, [id]);
 
             if (questions.length === 0) {
                 return res.status(404).json({
@@ -53,14 +85,27 @@ class QuestionController {
                 });
             }
 
+            const q = questions[0];
+            const base = {
+                ...q,
+                options: typeof q.options === 'string' ? JSON.parse(q.options) : q.options
+            };
+
+            if (q.question_type === 'js_code' && q.code_snippet) {
+                base.jsCodeMeta = {
+                    code_snippet: q.code_snippet,
+                    answer_mode: q.answer_mode,
+                    explanation: q.explanation,
+                    difficulty: q.difficulty,
+                    knowledge_points: q.knowledge_points
+                };
+            } else {
+                base.jsCodeMeta = null;
+            }
+
             res.json({
                 success: true,
-                data: {
-                    ...questions[0],
-                    options: typeof questions[0].options === 'string'
-                        ? JSON.parse(questions[0].options)
-                        : questions[0].options
-                }
+                data: base
             });
         } catch (error) {
             next(error);
@@ -77,10 +122,16 @@ class QuestionController {
             const { id } = req.params;
             const { userId } = req.query;
 
-            const [questions] = await pool.execute(
-                'SELECT id, title, code, options, correctAnswer, categoryId, created_at FROM questions WHERE id = ?',
-                [id]
-            );
+            const [questions] = await pool.execute(`
+                SELECT
+                    q.id, q.title, q.code, q.options, q.correctAnswer,
+                    q.categoryId, q.question_type, q.created_at,
+                    qjc.code_snippet, qjc.answer_mode, qjc.explanation,
+                    qjc.difficulty, qjc.knowledge_points
+                FROM questions q
+                LEFT JOIN question_js_code qjc ON q.id = qjc.question_id
+                WHERE q.id = ?
+            `, [id]);
 
             if (questions.length === 0) {
                 return res.status(404).json({
@@ -89,10 +140,31 @@ class QuestionController {
                 });
             }
 
-            const question = questions[0];
-            const options = typeof question.options === 'string'
-                ? JSON.parse(question.options)
-                : question.options;
+            const q = questions[0];
+            const options = typeof q.options === 'string'
+                ? JSON.parse(q.options)
+                : q.options;
+
+            const question = {
+                id: q.id,
+                title: q.title,
+                code: q.code,
+                options,
+                correctAnswer: q.correctAnswer,
+                categoryId: q.categoryId,
+                question_type: q.question_type,
+                created_at: q.created_at,
+            };
+
+            if (q.question_type === 'js_code' && q.code_snippet) {
+                question.jsCodeMeta = {
+                    code_snippet: q.code_snippet,
+                    answer_mode: q.answer_mode,
+                    explanation: q.explanation,
+                    difficulty: q.difficulty,
+                    knowledge_points: q.knowledge_points
+                };
+            }
 
             // 并行获取：用户关系 + 相似题 + 相关帖子
             const [relation, similar, posts] = await Promise.all([
@@ -104,13 +176,7 @@ class QuestionController {
             res.json({
                 success: true,
                 data: {
-                    id: question.id,
-                    title: question.title,
-                    code: question.code,
-                    options,
-                    correctAnswer: question.correctAnswer,
-                    categoryId: question.categoryId,
-                    created_at: question.created_at,
+                    ...question,
                     relation,
                     similarQuestions: similar,
                     relatedPosts: posts
@@ -163,7 +229,7 @@ class QuestionController {
 
     async create(req, res, next) {
         try {
-            const { title, code, options, correctAnswer, categoryId } = req.body;
+            const { title, code, options, correctAnswer, categoryId, question_type, jsCodeMeta } = req.body;
 
             if (!title || !options || !correctAnswer) {
                 return res.status(400).json({
@@ -173,18 +239,37 @@ class QuestionController {
             }
 
             const optionsJson = typeof options === 'string' ? options : JSON.stringify(options);
+            const qType = question_type || 'normal';
 
             const [result] = await pool.execute(
-                'INSERT INTO questions (title, code, options, correctAnswer, categoryId) VALUES (?, ?, ?, ?, ?)',
-                [title, code || null, optionsJson, correctAnswer, categoryId || null]
+                'INSERT INTO questions (title, code, options, correctAnswer, categoryId, question_type) VALUES (?, ?, ?, ?, ?, ?)',
+                [title, code || null, optionsJson, correctAnswer, categoryId || null, qType]
             );
+
+            const questionId = result.insertId;
+
+            // 如果是代码题，同时写入扩展表
+            if (qType === 'js_code' && jsCodeMeta) {
+                const { code_snippet, answer_mode, explanation, difficulty, knowledge_points } = jsCodeMeta;
+                await pool.execute(
+                    `INSERT INTO question_js_code
+                        (question_id, code_snippet, answer_mode, explanation, difficulty, knowledge_points)
+                     VALUES (?, ?, ?, ?, ?, ?)`,
+                    [
+                        questionId,
+                        code_snippet || '',
+                        answer_mode || 'select',
+                        explanation || null,
+                        difficulty || 1,
+                        knowledge_points || null
+                    ]
+                );
+            }
 
             res.status(201).json({
                 success: true,
                 message: '题目创建成功',
-                data: {
-                    id: result.insertId
-                }
+                data: { id: questionId }
             });
         } catch (error) {
             next(error);
@@ -194,7 +279,7 @@ class QuestionController {
     async update(req, res, next) {
         try {
             const { id } = req.params;
-            const { title, code, options, correctAnswer, categoryId } = req.body;
+            const { title, code, options, correctAnswer, categoryId, question_type, jsCodeMeta } = req.body;
 
             const updates = [];
             const params = [];
@@ -219,26 +304,55 @@ class QuestionController {
                 updates.push('categoryId = ?');
                 params.push(categoryId);
             }
-
-            if (updates.length === 0) {
-                return res.status(400).json({
-                    success: false,
-                    message: '没有要更新的字段'
-                });
+            if (question_type !== undefined) {
+                updates.push('question_type = ?');
+                params.push(question_type);
             }
 
-            params.push(id);
+            if (updates.length > 0) {
+                params.push(id);
+                const [result] = await pool.execute(
+                    `UPDATE questions SET ${updates.join(', ')} WHERE id = ?`,
+                    params
+                );
 
-            const [result] = await pool.execute(
-                `UPDATE questions SET ${updates.join(', ')} WHERE id = ?`,
-                params
-            );
+                if (result.affectedRows === 0) {
+                    return res.status(404).json({
+                        success: false,
+                        message: '题目不存在'
+                    });
+                }
+            }
 
-            if (result.affectedRows === 0) {
-                return res.status(404).json({
-                    success: false,
-                    message: '题目不存在'
-                });
+            // 更新代码题扩展信息
+            if (question_type === 'js_code' && jsCodeMeta) {
+                const { code_snippet, answer_mode, explanation, difficulty, knowledge_points } = jsCodeMeta;
+                // 尝试更新，如果不存在则插入
+                const [existing] = await pool.execute(
+                    'SELECT id FROM question_js_code WHERE question_id = ?',
+                    [id]
+                );
+                if (existing.length > 0) {
+                    await pool.execute(
+                        `UPDATE question_js_code SET
+                            code_snippet = ?, answer_mode = ?, explanation = ?, difficulty = ?, knowledge_points = ?
+                         WHERE question_id = ?`,
+                        [code_snippet || '', answer_mode || 'select', explanation || null, difficulty || 1, knowledge_points || null, id]
+                    );
+                } else {
+                    await pool.execute(
+                        `INSERT INTO question_js_code
+                            (question_id, code_snippet, answer_mode, explanation, difficulty, knowledge_points)
+                         VALUES (?, ?, ?, ?, ?, ?)`,
+                        [id, code_snippet || '', answer_mode || 'select', explanation || null, difficulty || 1, knowledge_points || null]
+                    );
+                }
+            } else if (question_type === 'normal') {
+                // 切换为普通题时删除扩展数据
+                await pool.execute(
+                    'DELETE FROM question_js_code WHERE question_id = ?',
+                    [id]
+                );
             }
 
             res.json({
@@ -253,6 +367,12 @@ class QuestionController {
     async remove(req, res, next) {
         try {
             const { id } = req.params;
+
+            // 先删扩展表（如果有）
+            await pool.execute(
+                'DELETE FROM question_js_code WHERE question_id = ?',
+                [id]
+            );
 
             const [result] = await pool.execute(
                 'DELETE FROM questions WHERE id = ?',
