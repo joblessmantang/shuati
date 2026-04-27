@@ -15,5 +15,7 @@ router.patch('/users/:userId/role', authMiddleware, authController.updateUserRol
 router.delete('/users/:userId', authMiddleware, authController.deleteUser);
 // 头像上传（需要认证）
 router.post('/avatar', authMiddleware, authController.uploadAvatar);
+// 主题切换（需要认证）
+router.patch('/theme', authMiddleware, authController.updateTheme);
 
 module.exports = router;

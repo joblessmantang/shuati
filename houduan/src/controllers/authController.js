@@ -79,7 +79,9 @@ class AuthController {
                     id: result.insertId,
                     username,
                     role: userRole,
-                    avatar_url: null
+                    avatar_url: null,
+                    theme: 'light',
+                    created_at: new Date().toISOString()
                 }
             });
         } catch (error) {
@@ -138,7 +140,9 @@ class AuthController {
                     id: user.id,
                     username: user.username,
                     role: user.role,
-                    avatar_url: user.avatar_url || null
+                    avatar_url: user.avatar_url || null,
+                    theme: user.theme || 'light',
+                    created_at: user.created_at
                 }
             });
         } catch (error) {
@@ -149,7 +153,7 @@ class AuthController {
     async getCurrentUser(req, res) {
         try {
             const [users] = await pool.execute(
-                'SELECT id, username, role, avatar_url, created_at FROM users WHERE id = ?',
+                'SELECT id, username, role, avatar_url, theme, created_at FROM users WHERE id = ?',
                 [req.user.id]
             );
 
@@ -374,6 +378,23 @@ class AuthController {
                 next(dbError);
             }
         });
+    }
+
+    /** PATCH /api/auth/theme - 切换主题 */
+    async updateTheme(req, res, next) {
+        try {
+            const { theme } = req.body;
+            if (!['light', 'dark'].includes(theme)) {
+                return res.status(400).json({ success: false, message: 'theme 必须是 light 或 dark' });
+            }
+            await pool.execute(
+                'UPDATE users SET theme = ? WHERE id = ?',
+                [theme, req.user.id]
+            );
+            res.json({ success: true, data: { theme } });
+        } catch (error) {
+            next(error);
+        }
     }
 }
 

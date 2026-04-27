@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const http = require('http');
+const { Server } = require('socket.io');
 const { testConnection } = require('./config/database');
 const { errorHandler, notFoundHandler } = require('./middlewares/errorHandler');
 const uploadMiddleware = require('./middlewares/upload');
@@ -20,6 +22,10 @@ const goalRoutes = require('./routes/goals');
 const topicRoutes = require('./routes/topics');
 const analysisRoutes = require('./routes/analysis');
 const resourceRoutes = require('./routes/resources');
+const announcementRoutes = require('./routes/announcements');
+const messageRoutes = require('./routes/messages');
+const searchRoutes = require('./routes/search');
+const feedbackRoutes = require('./routes/feedbacks');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -62,6 +68,10 @@ app.use('/api/goals', goalRoutes);
 app.use('/api/topics', topicRoutes);
 app.use('/api/analysis', analysisRoutes);
 app.use('/api/resources', resourceRoutes);
+app.use('/api/announcements', announcementRoutes);
+app.use('/api/messages', messageRoutes);
+app.use('/api/search', searchRoutes);
+app.use('/api/feedbacks', feedbackRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
@@ -74,7 +84,10 @@ async function startServer() {
         process.exit(1);
     }
 
-    app.listen(PORT, () => {
+    const server = http.createServer(app);
+    require('./services/socketService').init(server);
+
+    server.listen(PORT, () => {
         console.log(`服务器运行在 http://localhost:${PORT}`);
         console.log(`环境: ${process.env.NODE_ENV || 'development'}`);
     });

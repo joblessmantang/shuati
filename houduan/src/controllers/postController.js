@@ -1,4 +1,5 @@
 const { pool } = require('../config/database');
+const { pushNewMessage } = require('../services/socketService');
 
 function escapeHtml(text) {
     if (!text) return '';
@@ -233,26 +234,119 @@ class PostController {
             const { postId } = req.params;
             const userId = req.user.id;
 
-            // 简化：直接增减点赞数（第一阶段不做去重，v2再优化）
-            const [posts] = await pool.execute(
-                'SELECT id, like_count FROM posts WHERE id = ?', [postId]
-            );
-            if (posts.length === 0) {
-                return res.status(404).json({ success: false, message: '帖子不存在' });
+            const conn = await pool.getConnection();
+            try {
+                await conn.beginTransaction();
+
+                const [posts] = await conn.execute(
+                    'SELECT id, user_id, like_count, title FROM posts WHERE id = ?', [postId]
+                );
+                if (posts.length === 0) {
+                    await conn.rollback();
+                    return res.status(404).json({ success: false, message: '帖子不存在' });
+                }
+
+                const post = posts[0];
+
+                await conn.execute(
+                    'UPDATE posts SET like_count = like_count + 1 WHERE id = ?', [postId]
+                );
+
+                const [[updated]] = await conn.execute(
+                    'SELECT like_count FROM posts WHERE id = ?', [postId]
+                );
+
+                if (post.user_id !== userId) {
+                    await conn.execute(
+                        `INSERT INTO messages (user_id, type, title, content, related_id, related_type)
+                         VALUES (?, 'like', '有人赞了你的帖子', ?, ?, 'post')`,
+                        [post.user_id, `你的帖子"${post.title}"收到了 1 个赞`, postId]
+                    );
+                }
+
+                await conn.commit();
+
+                if (post.user_id !== userId) {
+                    pushNewMessage(post.user_id, {
+                        type: 'like',
+                        title: '有人赞了你的帖子',
+                        content: `你的帖子"${post.title}"收到了 1 个赞`,
+                        related_id: parseInt(postId),
+                        related_type: 'post'
+                    });
+                }
+
+                res.json({
+                    success: true,
+                    data: { likeCount: updated.like_count }
+                });
+            } catch (err) {
+                await conn.rollback();
+                throw err;
+            } finally {
+                conn.release();
             }
+        } catch (error) {
+            next(error);
+        }
+    }
 
-            await pool.execute(
-                'UPDATE posts SET like_count = like_count + 1 WHERE id = ?', [postId]
-            );
+    /** POST /api/posts/:postId/comments/:commentId/like - 点赞/取消点赞评论 */
+    async toggleCommentLike(req, res, next) {
+        try {
+            const { postId, commentId } = req.params;
+            const userId = req.user.id;
 
-            const [[updated]] = await pool.execute(
-                'SELECT like_count FROM posts WHERE id = ?', [postId]
-            );
+            const conn = await pool.getConnection();
+            try {
+                await conn.beginTransaction();
 
-            res.json({
-                success: true,
-                data: { likeCount: updated.like_count }
-            });
+                const [comments] = await conn.execute(
+                    'SELECT id, user_id, like_count FROM comments WHERE id = ? AND post_id = ?', [commentId, postId]
+                );
+
+                if (comments.length === 0) {
+                    await conn.rollback();
+                    return res.status(404).json({ success: false, message: '评论不存在' });
+                }
+
+                const comment = comments[0];
+
+                await conn.execute(
+                    'UPDATE comments SET like_count = like_count + 1 WHERE id = ?', [commentId]
+                );
+
+                const [[updated]] = await conn.execute(
+                    'SELECT like_count FROM comments WHERE id = ?', [commentId]
+                );
+
+                if (comment.user_id !== userId) {
+                    await conn.execute(
+                        `INSERT INTO messages (user_id, type, title, content, related_id, related_type)
+                         VALUES (?, 'like', '有人赞了你的评论', ?, ?, 'comment')`,
+                        [comment.user_id, `你的评论收到了 1 个赞`, commentId]
+                    );
+                }
+
+                await conn.commit();
+
+                if (comment.user_id !== userId) {
+                    pushNewMessage(comment.user_id, {
+                        type: 'like',
+                        title: '有人赞了你的评论',
+                        content: '你的评论收到了 1 个赞',
+                        related_id: parseInt(commentId),
+                        related_type: 'comment'
+                    });
+                }
+
+                res.json({ success: true, data: { likeCount: updated.like_count } });
+            } catch (err) {
+                await conn.rollback();
+                throw err;
+            } finally {
+                conn.release();
+            }
         } catch (error) {
             next(error);
         }

@@ -1,4 +1,5 @@
 const { pool } = require('../config/database');
+const { pushNewMessage } = require('../services/socketService');
 
 function escapeHtml(text) {
     if (!text) return '';
@@ -86,24 +87,69 @@ class CommentController {
             }
 
             const safeContent = escapeHtml(String(content.trim()));
+            const rawContent = String(content.trim()).substring(0, 50);
 
-            const [result] = await pool.execute(
-                'INSERT INTO comments (post_id, user_id, content) VALUES (?, ?, ?)',
-                [postId, userId, safeContent]
-            );
+            const conn = await pool.getConnection();
+            try {
+                await conn.beginTransaction();
 
-            const [newComment] = await pool.execute(`
-                SELECT c.*, u.username as author_name
-                FROM comments c
-                JOIN users u ON c.user_id = u.id
-                WHERE c.id = ?
-            `, [result.insertId]);
+                const [result] = await conn.execute(
+                    'INSERT INTO comments (post_id, user_id, content) VALUES (?, ?, ?)',
+                    [postId, userId, safeContent]
+                );
 
-            res.status(201).json({
-                success: true,
-                message: '评论发布成功',
-                data: { comment: newComment[0] }
-            });
+                const [newComment] = await conn.execute(`
+                    SELECT c.*, u.username as author_name
+                    FROM comments c
+                    JOIN users u ON c.user_id = u.id
+                    WHERE c.id = ?
+                `, [result.insertId]);
+
+                const [postInfo] = await conn.execute(
+                    'SELECT id, user_id, title FROM posts WHERE id = ?', [postId]
+                );
+
+                if (postInfo.length > 0 && postInfo[0].user_id !== userId) {
+                    const displayContent = rawContent.length < content.trim().length
+                        ? rawContent + '...'
+                        : rawContent;
+                    await conn.execute(
+                        `INSERT INTO messages (user_id, type, title, content, related_id, related_type)
+                         VALUES (?, 'reply', '有人回复了你的帖子', ?, ?, 'post')`,
+                        [
+                            postInfo[0].user_id,
+                            `"${postInfo[0].title}"有了新回复：${displayContent}`,
+                            postId
+                        ]
+                    );
+                }
+
+                await conn.commit();
+
+                if (postInfo.length > 0 && postInfo[0].user_id !== userId) {
+                    const displayContent = rawContent.length < content.trim().length
+                        ? rawContent + '...'
+                        : rawContent;
+                    pushNewMessage(postInfo[0].user_id, {
+                        type: 'reply',
+                        title: '有人回复了你的帖子',
+                        content: `"${postInfo[0].title}"有了新回复：${displayContent}`,
+                        related_id: parseInt(postId),
+                        related_type: 'post'
+                    });
+                }
+
+                res.status(201).json({
+                    success: true,
+                    message: '评论发布成功',
+                    data: { comment: newComment[0] }
+                });
+            } catch (err) {
+                await conn.rollback();
+                throw err;
+            } finally {
+                conn.release();
+            }
         } catch (error) {
             next(error);
         }
@@ -137,34 +183,6 @@ class CommentController {
             await pool.execute('DELETE FROM comments WHERE id = ?', [commentId]);
 
             res.json({ success: true, message: '评论删除成功' });
-        } catch (error) {
-            next(error);
-        }
-    }
-
-    /** PATCH /api/posts/:postId/comments/:commentId/like */
-    async toggleLike(req, res, next) {
-        try {
-            const { commentId } = req.params;
-            const userId = req.user.id;
-
-            const [comments] = await pool.execute(
-                'SELECT id, like_count FROM comments WHERE id = ?', [commentId]
-            );
-
-            if (comments.length === 0) {
-                return res.status(404).json({ success: false, message: '评论不存在' });
-            }
-
-            await pool.execute(
-                'UPDATE comments SET like_count = like_count + 1 WHERE id = ?', [commentId]
-            );
-
-            const [[updated]] = await pool.execute(
-                'SELECT like_count FROM comments WHERE id = ?', [commentId]
-            );
-
-            res.json({ success: true, data: { likeCount: updated.like_count } });
         } catch (error) {
             next(error);
         }
@@ -240,6 +258,74 @@ class CommentController {
             );
 
             res.json({ success: true, data: { isAccepted: !!newVal } });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /** PATCH /api/posts/:postId/comments/:commentId/like */
+    async toggleLike(req, res, next) {
+        try {
+            const { commentId } = req.params;
+            const userId = req.user.id;
+
+            const [comments] = await pool.execute(
+                `SELECT c.id, c.like_count, c.user_id, p.title as post_title, p.id as post_id
+                 FROM comments c JOIN posts p ON c.post_id = p.id WHERE c.id = ?`,
+                [commentId]
+            );
+
+            if (comments.length === 0) {
+                return res.status(404).json({ success: false, message: '评论不存在' });
+            }
+
+            const comment = comments[0];
+
+            const conn = await pool.getConnection();
+            try {
+                await conn.beginTransaction();
+
+                const [updateResult] = await conn.execute(
+                    'UPDATE comments SET like_count = like_count + 1 WHERE id = ?',
+                    [commentId]
+                );
+
+                const [[updated]] = await conn.execute(
+                    'SELECT like_count FROM comments WHERE id = ?',
+                    [commentId]
+                );
+
+                if (comment.user_id !== userId) {
+                    await conn.execute(
+                        `INSERT INTO messages (user_id, type, title, content, related_id, related_type)
+                         VALUES (?, 'like', '有人赞了你的评论', ?, ?, 'comment')`,
+                        [
+                            comment.user_id,
+                            `你的评论被赞了："${comment.post_title}"`,
+                            comment.post_id
+                        ]
+                    );
+                }
+
+                await conn.commit();
+
+                if (comment.user_id !== userId) {
+                    pushNewMessage(comment.user_id, {
+                        type: 'like',
+                        title: '有人赞了你的评论',
+                        content: `你的评论被赞了："${comment.post_title}"`,
+                        related_id: parseInt(comment.post_id),
+                        related_type: 'comment'
+                    });
+                }
+
+                res.json({ success: true, data: { likeCount: updated.like_count } });
+            } catch (err) {
+                await conn.rollback();
+                throw err;
+            } finally {
+                conn.release();
+            }
         } catch (error) {
             next(error);
         }

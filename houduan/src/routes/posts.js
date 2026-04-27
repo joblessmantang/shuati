@@ -15,7 +15,7 @@ router.delete('/:postId', authMiddleware, postController.deletePost);
 // 评论
 router.post('/:postId/comments', authMiddleware, commentController.createComment);
 router.delete('/:postId/comments/:commentId', authMiddleware, commentController.deleteComment);
-router.patch('/:postId/comments/:commentId/like', authMiddleware, commentController.toggleLike);
+router.patch('/:postId/comments/:commentId/like', authMiddleware, postController.toggleCommentLike);
 router.patch('/:postId/comments/:commentId/highlight', authMiddleware, commentController.toggleHighlight);
 router.patch('/:postId/comments/:commentId/accept', authMiddleware, commentController.toggleAccept);
 router.post('/', authMiddleware, postController.createPost);
